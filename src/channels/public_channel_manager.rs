@@ -1,9 +1,9 @@
 use crate::message::PusherMessage;
 use crate::utils;
-use fastwebsockets::FragmentCollector;
+use echoxide::WS;
 
-pub struct JoinResponse<S> {
-    pub(crate) server: FragmentCollector<S>,
+pub struct JoinResponse {
+    pub(crate) server: WS,
     pub(crate) success: bool,
     pub(crate) channel_connections: Option<i64>,
     pub(crate) auth_error: Option<bool>,
@@ -19,17 +19,12 @@ pub struct LeaveResponse {
     pub(crate) member: Option<bool>,
 }
 
-struct PublicChannelManager<S> {
-    server: FragmentCollector<S>,
+struct PublicChannelManager {
+    server: WS,
 }
 
-impl<S> PublicChannelManager<S> {
-    pub fn join(
-        &self,
-        server: FragmentCollector<S>,
-        channel: &str,
-        message: PusherMessage,
-    ) -> JoinResponse<S> {
+impl PublicChannelManager {
+    pub fn join(&self, server: WS, channel: &str, message: PusherMessage) -> JoinResponse {
         if utils::Utils::restricted_channel_name(channel) {
             JoinResponse {
                 server,

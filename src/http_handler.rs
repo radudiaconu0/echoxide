@@ -1,21 +1,12 @@
 use crate::log::Log;
-use crate::message;
-use crate::server::Server;
-use crate::ws_handler::{WSHandler, WebSocket};
+use crate::ws_handler::WSHandler;
 use axum::extract::{ConnectInfo, Path};
 use axum::response::IntoResponse;
-use echoxide::{WebSocketUpgrade, WS};
-use fastwebsockets::CloseCode::Status;
-use fastwebsockets::{upgrade, OpCode, WebSocketError};
+use echoxide::WebSocketUpgrade;
+
 use hyper::{HeaderMap, StatusCode};
-use serde_json::json;
+
 use std::net::SocketAddr;
-use std::ops::{Deref, Index};
-use std::rc::{Rc, Weak};
-use tokio::io::*;
-use tokio::io::{AsyncRead, AsyncWrite};
-use web_socket::Event;
-use web_socket::*;
 
 pub struct HttpHandler {}
 
@@ -34,7 +25,6 @@ impl HttpHandler {
     pub async fn channel(
         Path(app_id): Path<String>,
         Path(channel_name): Path<String>,
-        ws: upgrade::IncomingUpgrade,
     ) -> impl IntoResponse {
         println!(
             "WebSocket connection for app {} and channel {}",
@@ -57,12 +47,12 @@ impl HttpHandler {
         ws.on_upgrade(move |socket| WSHandler::handle_socket(socket, addr))
     }
 
-    pub fn ready() -> impl IntoResponse {
+    pub async fn ready() -> impl IntoResponse {
         Log::info("Server is ready");
         "OK"
     }
 
-    pub fn events() -> impl IntoResponse {
+    pub async fn events() -> impl IntoResponse {
         "Events"
     }
 

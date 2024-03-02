@@ -1,11 +1,12 @@
 use crate::http_handler::HttpHandler;
 use crate::log::Log;
 use crate::ws_handler::WSHandler;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use fred::types::Options;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::Mutex;
@@ -27,7 +28,9 @@ impl Server {
                 "/apps/:appId/channels/:channelName",
                 get(HttpHandler::channel),
             )
-            .route("/apps/:appId/channels", get(HttpHandler::channels));
+            .route("/apps/:appId/channels", get(HttpHandler::channels))
+            .route("/ready", get(HttpHandler::ready))
+            .route("/events", post(HttpHandler::events));
         let server = Arc::new(Server {
             addr,
             router,
@@ -41,7 +44,7 @@ impl Server {
         server.ws_handler.lock().await.replace(ws_handler);
         server
     }
-    pub(crate) async fn start(&self) {
+    pub(crate) async fn start(&mut self) {
         let server = TcpListener::bind(&self.addr).await.unwrap();
         Log::info(&format!("Listening on {}", self.addr));
         axum::serve(
@@ -54,9 +57,16 @@ impl Server {
         .unwrap();
     }
 
-    async fn stop(mut self) {
+    async fn stop(&mut self) {
         self.closing = true;
-        Log::info("Shutting down server");
+        Log::br();
+        Log::warning(
+            "🚫 New users cannot connect to this instance anymore. Preparing for signaling...",
+        );
+        Log::warning(
+            "⚡ The server is closing and signaling the existing connections to terminate.",
+        );
+        Log::br();
         let ctrl_c = async {
             signal::ctrl_c()
                 .await

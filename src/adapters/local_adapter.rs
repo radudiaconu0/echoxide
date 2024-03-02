@@ -11,32 +11,29 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
 
 pub struct LocalAdapter {
-    pub namespaces: Arc<Mutex<HashMap<String, Namespace>>>,
+    pub namespaces: HashMap<String, Namespace>,
 }
 
 impl LocalAdapter {
     pub fn new() -> Self {
         LocalAdapter {
-            namespaces: Arc::new(Mutex::new(HashMap::new())),
+            namespaces: HashMap::new(),
         }
     }
 }
 
-#[async_trait]
 impl AdapterInterface for LocalAdapter {
-    async fn get_namespace(&mut self, app_id: &str) -> Namespace {
-        if self.namespaces.lock().await.get(app_id).is_none() {
+    async fn get_namespace(&mut self, app_id: &str) -> Result<&Namespace, ()> {
+        if self.namespaces.get(app_id).is_none() {
             self.namespaces
-                .lock()
-                .await
                 .insert(app_id.to_string(), Namespace::new(app_id.to_string()));
         }
-        *self.namespaces.lock().await.get(app_id).unwrap().deref()
+        Ok(self.namespaces.get(app_id).unwrap())
     }
 
-    async fn get_namespaces(&self) -> HashMap<String, Namespace> {
+    async fn get_namespaces(&self) -> HashMap<String, &Namespace> {
         // return namespaces without clone
-        let namespaces = self.namespaces.lock().await;
+        let namespaces = &self.namespaces;
         let mut result = HashMap::new();
         for (k, v) in namespaces.iter() {
             result.insert(k.clone(), v.clone());

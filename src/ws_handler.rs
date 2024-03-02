@@ -2,7 +2,6 @@ use crate::channels::presence_channel_manager::PresenceMemberInfo;
 use crate::log::Log;
 use crate::message::{PusherMessage, UWebSocketMessage};
 use echoxide::WS;
-use fastwebsockets::{upgrade, FragmentCollector, Frame, OpCode, Payload, WebSocketError};
 use rand::Rng;
 
 use crate::message;

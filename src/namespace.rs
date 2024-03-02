@@ -20,14 +20,14 @@ impl Namespace {
         }
     }
 
-    pub fn get_sockets(&self) -> HashMap<String, WebSocket> {
-        todo!("get_sockets")
+    pub fn get_sockets(self) -> Result<HashMap<String, WebSocket>, ()> {
+        Ok(self.sockets)
     }
 
-    pub fn add_socket(&mut self, ws: WebSocket) -> bool {
+    pub fn add_socket(&mut self, ws: WebSocket) -> Result<bool, ()> {
         let (ws_id, ws) = (ws.id.clone().unwrap(), ws);
         self.sockets.insert(ws_id, ws);
-        true
+        Ok(true)
     }
 
     pub fn remove_socket(&mut self, id: String) -> bool {
@@ -64,33 +64,39 @@ impl Namespace {
             }
         }
     }
-    pub(crate) async fn add_to_channel(&mut self, channel: String, ws_id: String) -> Option<usize> {
+    pub(crate) async fn add_to_channel(
+        &mut self,
+        channel: String,
+        ws_id: String,
+    ) -> Result<usize, ()> {
         let channel_set = self.channels.entry(channel).or_default();
         channel_set.insert(ws_id);
-        Some(channel_set.len())
+        Ok(channel_set.len())
     }
 
-    pub fn is_in_channel(&self, ws_id: &str, channel: &str) -> bool {
-        self.channels
+    pub fn is_in_channel(&self, ws_id: &str, channel: &str) -> Result<bool, ()> {
+        Ok(self
+            .channels
             .get(channel)
             .map(|subscribers| subscribers.contains(ws_id))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
-    pub fn get_channels(&self) -> HashMap<String, HashSet<String>> {
-        self.channels.clone()
+    pub fn get_channels(&self) -> Result<HashMap<String, HashSet<String>>, ()> {
+        Ok(self.channels.clone())
     }
 
-    pub fn get_channels_with_sockets_count(&self) -> HashMap<String, usize> {
-        let channels = self.get_channels();
+    pub fn get_channels_with_sockets_count(&self) -> Result<HashMap<String, usize>, ()> {
+        let channels = self.get_channels().unwrap();
+
         let mut list = HashMap::<String, usize>::new();
         for (channel, connections) in channels.iter() {
             list.insert(channel.to_string(), connections.len());
         }
-        list
+        Ok(list)
     }
 
-    pub fn add_user(&mut self, ws: WebSocket) {
+    pub fn add_user(&mut self, ws: WebSocket) -> Result<(), ()> {
         let user = ws.user.unwrap();
         let user_id = user.id;
         if let Some(channels) = self.users.get_mut(&user_id) {
@@ -100,9 +106,10 @@ impl Namespace {
             set.insert(ws.id.clone().unwrap());
             self.users.insert(user_id, set);
         }
+        Ok(())
     }
 
-    pub fn remove_user(&mut self, ws: WebSocket) {
+    pub fn remove_user(&mut self, ws: WebSocket) -> Result<(), ()> {
         let user = ws.user;
         if let Some(user) = user {
             let user_id = user.id;
@@ -115,11 +122,12 @@ impl Namespace {
                 }
             }
         }
+        Ok(())
     }
-    pub fn get_channel_sockets(&self, channel: &str) -> HashMap<String, &WebSocket> {
+    pub fn get_channel_sockets(&self, channel: &str) -> Result<HashMap<String, &WebSocket>, ()> {
         let channels = self.channels.clone();
         if channels.get(channel).is_none() {
-            HashMap::new()
+            Ok(HashMap::new())
         } else {
             let ws_ids = channels.get(channel).unwrap();
             let mut sockets = HashMap::new();
@@ -128,21 +136,24 @@ impl Namespace {
                     sockets.insert(ws_id.clone(), ws);
                 }
             }
-            sockets.clone()
+            Ok(sockets.clone())
         }
     }
-    pub(crate) fn get_channel_sockets_count(&self, p0: &str) -> usize {
+    pub(crate) fn get_channel_sockets_count(&self, p0: &str) -> Result<usize, ()> {
         let channels = self.channels.clone();
         if channels.get(p0).is_none() {
-            return 0;
+            Ok(0)
         } else {
             let ws_ids = channels.get(p0).unwrap();
-            ws_ids.len()
+            Ok(ws_ids.len())
         }
     }
 
-    pub fn get_channel_members(&self, channel: &str) -> HashMap<String, PresenceMemberInfo> {
-        let sockets = self.get_channel_sockets(channel);
+    pub fn get_channel_members(
+        &self,
+        channel: &str,
+    ) -> Result<HashMap<String, PresenceMemberInfo>, ()> {
+        let sockets = self.get_channel_sockets(channel).unwrap();
         let mut members = HashMap::<String, PresenceMemberInfo>::new();
         for (ws_id, ws) in sockets {
             let channel = ws.presence_channels.as_ref().unwrap().get(channel);
@@ -159,24 +170,9 @@ impl Namespace {
                 members.insert(member.user_id, member.user_info);
             }
         }
-        members
+        Ok(members)
     }
-
-    // pub fn get_user_sockets(&mut self, user_id: &str) -> HashSet<&mut WebSocket> {
-    //     if let Some(ws_ids) = self.users.get(user_id) {
-    //         let mut sockets = HashSet::new();
-    //         for ws_id in ws_ids.iter() {
-    //             if let Some(ws) = self.sockets.get_mut(ws_id) {
-    //                 sockets.insert(ws);
-    //             }
-    //         }
-    //         sockets
-    //     } else {
-    //         HashSet::new()
-    //     }
-    // }
-
-    pub fn get_user_socket_ids(&self, user_id: &str) -> Vec<String> {
+    pub fn get_user_socket_ids(&self, user_id: &str) -> Result<Vec<String>, ()> {
         let mut socket_ids = Vec::new();
         if let Some(ws_ids) = self.users.get(user_id) {
             for ws_id in ws_ids.iter() {
@@ -185,9 +181,9 @@ impl Namespace {
                 }
             }
         }
-        socket_ids
+        Ok(socket_ids)
     }
-    pub fn get_user_sockets(&self, user_id: &str) -> HashSet<&WebSocket> {
+    pub fn get_user_sockets(&self, user_id: &str) -> Result<HashSet<&WebSocket>, ()> {
         let mut sockets = HashSet::new();
         if let Some(ws_ids) = self.users.get(user_id) {
             for ws_id in ws_ids.iter() {
@@ -196,9 +192,29 @@ impl Namespace {
                 }
             }
         }
-        sockets
+        Ok(sockets)
     }
-    pub async fn terminate_user_connections(&mut self, user_id: &str) {
-        todo!("terminate_user_connections")
+    pub async fn terminate_user_connections(self, user_id: &str) {
+        let sockets = self.get_sockets().unwrap();
+        for (_ws_id, mut ws) in sockets {
+            if let Some(user) = ws.user.clone() {
+                if user.id == user_id {
+                    ws.send_json(serde_json::json!({
+                        "event": "pusher:error",
+                        "data": {
+                            "code": 4201,
+                            "message": "You got disconnected by the app.",
+                        },
+                    }))
+                    .await;
+                    if (ws
+                        .ws
+                        .close((4201u16, "You got disconnected by the app."))
+                        .await)
+                        .is_ok()
+                    {}
+                }
+            }
+        }
     }
 }

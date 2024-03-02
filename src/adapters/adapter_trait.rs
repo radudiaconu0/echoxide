@@ -6,11 +6,10 @@ use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-#[async_trait]
 pub trait AdapterInterface: Send + Sync {
     // Assume Namespace, WebSocket, and PresenceMemberInfo are already defined
     // fn init(&self) -> Box<dyn AdapterInterface>;
-    async fn get_namespace(&mut self, app_id: &str) -> Namespace;
+    async fn get_namespace(&mut self, app_id: &str) -> Result<&Namespace, ()>;
     async fn get_namespaces(&self) -> HashMap<String, &Namespace>;
     async fn add_socket(&mut self, app_id: &str, ws: WebSocket) -> bool;
     async fn remove_socket(&mut self, app_id: &str, ws_id: &str) -> bool;

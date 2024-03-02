@@ -6,7 +6,7 @@ mod message;
 // mod options;
 mod handle_client;
 
-mod adapters;
+// mod adapters;
 mod namespace;
 mod server;
 mod utils;
@@ -17,5 +17,4 @@ use crate::server::Server;
 #[tokio::main]
 async fn main() {
     let server = Server::new("0.0.0.0:3000".to_string()).await;
-    server.start().await;
 }
