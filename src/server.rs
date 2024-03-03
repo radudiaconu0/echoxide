@@ -1,60 +1,110 @@
-use crate::http_handler::HttpHandler;
+use crate::http_handler::{HttpHandler, PrometheusQuery};
 use crate::log::Log;
+use crate::metrics::prometheus_metrics_driver::PrometheusMetricsDriver;
+use crate::options::{
+    Adapter, AppManager, ArrayAppManager, CacheAppManager, ClusterAdapter, Metrics,
+    MySQLAppManager, NatsAdapter, Options, Prometheus, RedisAdapter,
+};
 use crate::ws_handler::WSHandler;
-use axum::routing::{get, post};
+use axum::extract::Query;
+
+use axum::routing::{get, post, Route};
 use axum::Router;
-use fred::types::Options;
+use axum::{
+    http::{header::HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+};
+
+use std::fmt::format;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::Mutex;
 
 pub struct Server {
-    addr: String,
-    router: Router,
     pub closing: bool,
     options: Option<Options>,
     ws_handler: Mutex<Option<Arc<WSHandler>>>,
+    pub(crate) metrics: Mutex<Option<Arc<PrometheusMetricsDriver>>>,
+    http_handler: Mutex<Option<Arc<HttpHandler>>>,
 }
 
 impl Server {
-    pub(crate) async fn new(addr: String) -> Arc<Self> {
-        let router = Router::new()
-            .route("/health", get(HttpHandler::health_check))
-            .route("/app/:appId", get(HttpHandler::ws_handler))
-            .route(
-                "/apps/:appId/channels/:channelName",
-                get(HttpHandler::channel),
-            )
-            .route("/apps/:appId/channels", get(HttpHandler::channels))
-            .route("/ready", get(HttpHandler::ready))
-            .route("/events", post(HttpHandler::events));
+    pub(crate) async fn new() -> Arc<Self> {
+        let options = Options {
+            adapter: Adapter {
+                driver: "".to_string(),
+                redis: RedisAdapter {
+                    request_timeout: 0,
+                    prefix: "".to_string(),
+                    redis_pub_options: Default::default(),
+                    redis_sub_options: Default::default(),
+                    cluster_mode: false,
+                },
+                cluster: ClusterAdapter { request_timeout: 0 },
+                nats: NatsAdapter {
+                    request_timeout: 0,
+                    prefix: "".to_string(),
+                    servers: vec![],
+                    user: None,
+                    password: None,
+                    token: None,
+                    timeout: 0,
+                    nodes_number: None,
+                },
+            },
+            app_manager: AppManager {
+                driver: "".to_string(),
+                array: ArrayAppManager { apps: vec![] },
+                cache: CacheAppManager {
+                    enabled: false,
+                    ttl: 0,
+                },
+                mysql: MySQLAppManager {
+                    table: "".to_string(),
+                    version: "".to_string(),
+                },
+            },
+            debug: true,
+            port: 3000,
+            metrics: Metrics {
+                enabled: false,
+                driver: String::from("prometheus"),
+                host: String::from("0.0.0.0"),
+                prometheus: Prometheus {
+                    prefix: "echoxide_".to_string(),
+                },
+                port: 9601,
+            },
+        };
         let server = Arc::new(Server {
-            addr,
-            router,
             closing: false,
-            options: None,
+            options: Some(options),
             ws_handler: Mutex::new(None),
+            metrics: Mutex::new(None),
+            http_handler: Mutex::new(None),
         });
         let ws_handler = Arc::new(WSHandler {
             server: Arc::downgrade(&server), // Create a Weak reference from the server
         });
+        let metrics = Arc::new(PrometheusMetricsDriver::new(Arc::downgrade(&server)));
+        let http_handler = Arc::new(HttpHandler {
+            server: Arc::downgrade(&server),
+        });
         server.ws_handler.lock().await.replace(ws_handler);
+        server.metrics.lock().await.replace(metrics);
+        server.http_handler.lock().await.replace(http_handler);
         server
     }
-    pub(crate) async fn start(&mut self) {
-        let server = TcpListener::bind(&self.addr).await.unwrap();
-        Log::info(&format!("Listening on {}", self.addr));
-        axum::serve(
-            server,
-            self.router
-                .clone()
-                .into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await
-        .unwrap();
+    pub async fn start(&self) {
+        Log::br();
+        let options = self.options.as_ref().unwrap();
+        if options.debug {
+            Log::info("📡 echoxide initialization....".to_string());
+            Log::info("⚡ Initializing the HTTP API & Websockets Server...".to_string());
+        }
+        self.start_main_server().await;
     }
 
     async fn stop(&mut self) {
@@ -91,5 +141,56 @@ impl Server {
     }
     pub fn get_instance(self) -> Self {
         self
+    }
+
+    pub async fn metrics_server(&self) -> Router {
+        let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
+        Router::new()
+            .route("/usage", get(HttpHandler::usage))
+            .route(
+                "/metrics",
+                get(move |prometheus_query: Query<PrometheusQuery>| async move {
+                    http_handler.clone().metrics(prometheus_query).await
+                }),
+            )
+    }
+    async fn start_metrics_server(&self) {
+        let app = self.metrics_server().await;
+        let options = self.options.as_ref().unwrap();
+        let addr = format!("{}:{}", options.metrics.host, options.metrics.port);
+        let listener = TcpListener::bind(addr).await.unwrap();
+        Log::success_title(format!(
+            "🌠 Prometheus /metrics endpoint is available on port {}",
+            options.metrics.port
+        ));
+        tracing::debug!("listening on {}", listener.local_addr().unwrap());
+        axum::serve(listener, app).await.unwrap();
+    }
+
+    pub async fn start_main_server(&self) {
+        let router = Router::new()
+            .route("/health", get(HttpHandler::health_check))
+            .route("/app/:appId", get(WSHandler::ws_handler))
+            .route(
+                "/apps/:appId/channels/:channelName",
+                get(HttpHandler::channel),
+            )
+            .route("/apps/:appId/channels", get(HttpHandler::channels))
+            .route("/ready", get(HttpHandler::ready))
+            .route("/events", post(HttpHandler::events));
+        let server = TcpListener::bind(("127.0.0.1", self.options.as_ref().unwrap().port))
+            .await
+            .unwrap();
+        Log::success_title("🎉 Server is up and running!".to_string());
+        Log::success_title(format!(
+            "📡 The Websockets server is available at 127.0.0.1:{}",
+            self.options.as_ref().unwrap().port
+        ));
+        Log::success_title(format!(
+            "🔗 The HTTP API server is available at http://127.0.0.1:{}",
+            self.options.as_ref().unwrap().port
+        ));
+        Log::br();
+        axum::serve(server, router).await.unwrap();
     }
 }

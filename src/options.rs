@@ -12,29 +12,29 @@ pub struct Redis {
     pub cluster: Option<Vec<ClusterNode>>,
 }
 
-struct ClusterNode {
+pub struct ClusterNode {
     pub host: String,
     pub port: u16,
 }
 
-struct RedisSentinel {
+pub struct RedisSentinel {
     host: String,
     port: u16,
 }
 
 pub struct Adapter {
     pub driver: String,
-    redis: RedisAdapter,
-    cluster: ClusterAdapter,
-    nats: NatsAdapter,
+    pub(crate) redis: RedisAdapter,
+    pub(crate) cluster: ClusterAdapter,
+    pub(crate) nats: NatsAdapter,
 }
 
 pub struct RedisAdapter {
     pub request_timeout: i64,
-    prefix: String,
-    redis_pub_options: Value,
-    redis_sub_options: Value,
-    cluster_mode: bool,
+    pub(crate) prefix: String,
+    pub(crate) redis_pub_options: Value,
+    pub(crate) redis_sub_options: Value,
+    pub(crate) cluster_mode: bool,
 }
 
 pub struct ClusterAdapter {
@@ -43,37 +43,52 @@ pub struct ClusterAdapter {
 
 pub struct NatsAdapter {
     pub request_timeout: i64,
-    prefix: String,
-    servers: Vec<String>,
-    user: Option<String>,
-    password: Option<String>,
-    token: Option<String>,
-    timeout: i64,
-    nodes_number: Option<i64>,
+    pub(crate) prefix: String,
+    pub(crate) servers: Vec<String>,
+    pub(crate) user: Option<String>,
+    pub(crate) password: Option<String>,
+    pub(crate) token: Option<String>,
+    pub(crate) timeout: i64,
+    pub(crate) nodes_number: Option<i64>,
 }
 
 pub struct AppManager {
-    driver: String,
-    array: ArrayAppManager,
-    cache: CacheAppManager,
-    mysql: MySQLAppManager,
+    pub(crate) driver: String,
+    pub(crate) array: ArrayAppManager,
+    pub(crate) cache: CacheAppManager,
+    pub(crate) mysql: MySQLAppManager,
 }
 
 pub struct ArrayAppManager {
-    apps: Vec<App>,
+    pub(crate) apps: Vec<App>,
 }
 
-struct CacheAppManager {
-    enabled: bool,
-    ttl: i64,
+pub struct CacheAppManager {
+    pub(crate) enabled: bool,
+    pub(crate) ttl: i64,
 }
 
-struct MySQLAppManager {
-    table: String,
-    version: String,
+pub struct MySQLAppManager {
+    pub(crate) table: String,
+    pub(crate) version: String,
 }
 
-struct Options {
-    adapter: Adapter,
-    app_manager: AppManager,
+pub struct Prometheus {
+    pub(crate) prefix: String,
+}
+
+pub struct Metrics {
+    pub(crate) enabled: bool,
+    pub(crate) driver: String,
+    pub(crate) host: String,
+    pub(crate) prometheus: Prometheus,
+    pub(crate) port: u16,
+}
+
+pub struct Options {
+    pub(crate) adapter: Adapter,
+    pub(crate) app_manager: AppManager,
+    pub(crate) debug: bool,
+    pub(crate) port: u16,
+    pub(crate) metrics: Metrics,
 }

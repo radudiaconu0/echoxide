@@ -1,17 +1,18 @@
 use crate::channels::presence_channel_manager::PresenceMemberInfo;
 use crate::log::Log;
-use crate::message::{PusherMessage, UWebSocketMessage};
-use echoxide::WS;
-use rand::Rng;
-
 use crate::message;
+use crate::message::{PusherMessage, UWebSocketMessage};
 use crate::server::Server;
+use axum::extract::{ConnectInfo, Path, Query};
+use axum::response::IntoResponse;
+use echoxide::{WebSocketUpgrade, WS};
+use rand::Rng;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use tokio::sync::Mutex;
 use web_socket::Event;
 
 #[derive(Debug, Clone)]
@@ -193,7 +194,8 @@ impl WSHandler {
         Log::websocket_title("Received ping");
     }
 
-    pub async fn handle_socket(mut socket: WS, who: SocketAddr) {
+    pub async fn handle_socket(socket: WS, who: SocketAddr) {
+        println!("New WebSocket connection: {}", who);
         let mut ws = WebSocket::new(socket);
         let mut ws_handler = WSHandler::new();
         ws_handler.on_open(&mut ws).await;
@@ -215,8 +217,34 @@ impl WSHandler {
                 Event::Error(_) => {
                     Log::websocket("Error");
                 }
-                Event::Close { .. } => {}
+                Event::Close { .. } => {
+                    Log::websocket_title("❌ Connection closed:");
+                }
             }
         }
     }
+    pub(crate) async fn ws_handler(
+        Path(app_id): Path<String>,
+        query: Query<PusherWebsocketQuery>,
+        ws: WebSocketUpgrade,
+        ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ) -> impl IntoResponse {
+        Log::info(format!(
+            "WebSocket connection for app {}. Protocol: {}, client: {}, version: {}, flash: {}",
+            app_id,
+            query.protocol.unwrap_or(0),
+            query.client.as_deref().unwrap_or(""),
+            query.version.as_deref().unwrap_or(""),
+            query.flash.unwrap_or(false)
+        ));
+        ws.on_upgrade(move |socket| WSHandler::handle_socket(socket, addr))
+    }
+}
+
+#[derive(Debug, serde::Deserialize, Serialize)]
+pub struct PusherWebsocketQuery {
+    protocol: Option<u8>,
+    client: Option<String>,
+    version: Option<String>,
+    flash: Option<bool>,
 }

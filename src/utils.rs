@@ -1,6 +1,5 @@
 use regex::Regex;
 use serde_json::to_string;
-use md5::{};
 use std::collections::HashMap;
 
 pub struct Utils;
@@ -8,11 +7,8 @@ pub struct Utils;
 impl Utils {
     // Associated constants
     const CLIENT_EVENT_PATTERNS: &'static [&'static str] = &["client-*"];
-    const PRIVATE_CHANNEL_PATTERNS: &'static [&'static str] = &[
-        "private-*",
-        "private-encrypted-*",
-        "presence-*",
-    ];
+    const PRIVATE_CHANNEL_PATTERNS: &'static [&'static str] =
+        &["private-*", "private-encrypted-*", "presence-*"];
     const CACHING_CHANNEL_PATTERNS: &'static [&'static str] = &[
         "cache-*",
         "private-cache-*",
@@ -63,7 +59,9 @@ impl Utils {
     }
 
     pub fn restricted_channel_name(name: &str) -> bool {
-        !Regex::new(r"^#?[-a-zA-Z0-9_=@,.;]+$").unwrap().is_match(name)
+        !Regex::new(r"^#?[-a-zA-Z0-9_=@,.;]+$")
+            .unwrap()
+            .is_match(name)
     }
     fn to_ordered_array(map: &HashMap<&str, &str>) -> Vec<String> {
         let mut pairs: Vec<_> = map.iter().collect();

@@ -8,7 +8,7 @@ impl Log {
         println!("{}", message.bold().black().on_cyan());
     }
 
-    pub fn success_title(message: &str) {
+    pub fn success_title(message: String) {
         println!("{}", message.bold().black().on_green());
     }
 
@@ -49,7 +49,7 @@ impl Log {
 
     // The websocket_title method uses the success_title as its basis.
     pub fn websocket_title(message: &str) {
-        Self::success_title(&Self::prefix_with_time(message));
+        Self::success_title(Self::prefix_with_time(message));
     }
 
     pub fn webhook_sender_title(message: &str) {
@@ -59,7 +59,7 @@ impl Log {
         );
     }
 
-    pub fn info(message: &str) {
+    pub fn info(message: String) {
         println!("{}", message.cyan());
     }
 
@@ -67,7 +67,7 @@ impl Log {
         println!("{}", message.green());
     }
 
-    pub fn error(message: &str) {
+    pub fn error(message: String) {
         println!("{}", message.red());
     }
 
@@ -79,7 +79,7 @@ impl Log {
         println!("{}", message.bold().magenta());
     }
 
-    pub fn http(message: &str) {
+    pub fn http(message: String) {
         Self::info(message);
     }
 
@@ -96,9 +96,8 @@ impl Log {
     }
 
     pub fn br() {
-        println!("");
+        println!();
     }
-
     fn prefix_with_time(message: &str) -> String {
         let now = Local::now();
         format!("[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), message)

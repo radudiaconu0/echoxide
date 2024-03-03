@@ -4,7 +4,7 @@ use serde_json::{from_str, Value};
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct WebhookInterface {
+pub struct WebhookInterface {
     url: Option<String>,
     headers: Option<HashMap<String, String>>,
     lambda_function: Option<String>,
@@ -14,7 +14,7 @@ struct WebhookInterface {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct LambdaOptions {
+pub struct LambdaOptions {
     async_: Option<bool>,
     region: Option<String>,
     // client_options: Config,

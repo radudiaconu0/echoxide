@@ -30,15 +30,15 @@ impl Namespace {
         Ok(true)
     }
 
-    pub fn remove_socket(&mut self, id: String) -> bool {
+    pub fn remove_socket(&mut self, id: String) -> Result<bool, ()> {
         self.sockets.remove(&id);
-        true
+        Ok(true)
     }
     pub(crate) async fn remove_from_channel(
         &mut self,
         ws_id: &str,
         channel: Channel,
-    ) -> Option<usize> {
+    ) -> Result<usize, ()> {
         let remove = |channel: &String, channels: &mut HashMap<String, HashSet<String>>| {
             if let Some(ws_set) = channels.get_mut(channel) {
                 ws_set.remove(ws_id);
@@ -53,14 +53,14 @@ impl Namespace {
                 for ch in channel_vec {
                     remove(&ch, &mut self.channels);
                 }
-                None
+                Ok(0)
             }
             Channel::String(channel_string) => {
                 remove(&channel_string, &mut self.channels);
                 self.channels
                     .get(&channel_string)
                     .map(|ws_set| ws_set.len())
-                    .or(Some(0))
+                    .ok_or(())
             }
         }
     }
