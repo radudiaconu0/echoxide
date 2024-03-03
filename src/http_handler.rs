@@ -6,7 +6,7 @@ use echoxide::WebSocketUpgrade;
 
 use hyper::{HeaderMap, StatusCode};
 
-use crate::metrics::metrics_trait::MetricsTrait;
+// use crate::metrics::metrics_trait::MetricsTrait;
 use crate::server::Server;
 use serde::Serialize;
 use serde_json::json;
@@ -78,50 +78,50 @@ impl HttpHandler {
         )
     }
 
-    pub async fn metrics(&self, query: Query<PrometheusQuery>) -> impl IntoResponse {
-        let server = self.server.upgrade();
-        if let Some(server) = server {
-            let metrics = server.metrics.lock().await;
-            if let Some(metrics) = metrics.as_ref() {
-                if let Some(json) = query.json {
-                    if json {
-                        return match metrics.get_metrics_as_json().await {
-                            Ok(metrics) => (StatusCode::OK, HeaderMap::new(), metrics.to_string())
-                                .into_response(),
-                            Err(e) => (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                HeaderMap::new(),
-                                format!("Error: {}", e),
-                            )
-                                .into_response(),
-                        };
-                    }
-                }
-                return match metrics.get_metrics_as_plaintext().await {
-                    Ok(metrics) => (StatusCode::OK, HeaderMap::new(), metrics).into_response(),
-                    Err(e) => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        HeaderMap::new(),
-                        "Error: No metrics".to_string(),
-                    )
-                        .into_response(),
-                };
-            }
-        }
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            HeaderMap::new(),
-            "No metrics".to_string(),
-        )
-            .into_response()
-    }
-    pub async fn error() -> impl IntoResponse {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            HeaderMap::new(),
-            "Internal server error".to_string(),
-        )
-    }
+    // pub async fn metrics(&self, query: Query<PrometheusQuery>) -> impl IntoResponse {
+    //     let server = self.server.upgrade();
+    //     if let Some(server) = server {
+    //         let metrics = server.metrics.lock().await;
+    //         if let Some(metrics) = metrics.as_ref() {
+    //             if let Some(json) = query.json {
+    //                 if json {
+    //                     return match metrics.get_metrics_as_json().await {
+    //                         Ok(metrics) => (StatusCode::OK, HeaderMap::new(), metrics.to_string())
+    //                             .into_response(),
+    //                         Err(e) => (
+    //                             StatusCode::INTERNAL_SERVER_ERROR,
+    //                             HeaderMap::new(),
+    //                             format!("Error: {}", e),
+    //                         )
+    //                             .into_response(),
+    //                     };
+    //                 }
+    //             }
+    //             return match metrics.get_metrics_as_plaintext().await {
+    //                 Ok(metrics) => (StatusCode::OK, HeaderMap::new(), metrics).into_response(),
+    //                 Err(e) => (
+    //                     StatusCode::INTERNAL_SERVER_ERROR,
+    //                     HeaderMap::new(),
+    //                     "Error: No metrics".to_string(),
+    //                 )
+    //                     .into_response(),
+    //             };
+    //         }
+    //     }
+    //     (
+    //         StatusCode::INTERNAL_SERVER_ERROR,
+    //         HeaderMap::new(),
+    //         "No metrics".to_string(),
+    //     )
+    //         .into_response()
+    // }
+    // pub async fn error() -> impl IntoResponse {
+    //     (
+    //         StatusCode::INTERNAL_SERVER_ERROR,
+    //         HeaderMap::new(),
+    //         "Internal server error".to_string(),
+    //     )
+    // }
 }
 
 #[derive(Debug, serde::Deserialize, Serialize)]

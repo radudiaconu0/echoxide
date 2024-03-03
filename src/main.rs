@@ -8,7 +8,7 @@ mod handle_client;
 
 // mod adapters;
 mod app;
-mod metrics;
+// mod metrics;
 mod namespace;
 mod options;
 mod server;

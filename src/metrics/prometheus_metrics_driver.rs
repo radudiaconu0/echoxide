@@ -2,15 +2,11 @@ use crate::metrics::metrics_trait::MetricsTrait;
 use crate::server::Server;
 use crate::utils::Utils;
 use crate::ws_handler::WebSocket;
-use metrics_exporter_prometheus;
 use prometheus;
-use prometheus::core::GenericGauge;
-use prometheus::proto::MetricFamily;
 use prometheus::{CounterVec, Encoder, Gauge, GaugeVec, HistogramVec, Registry, TextEncoder};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use tokio::runtime::Runtime;
 
 struct PrometheusMetrics {
     registry: Registry,

@@ -223,20 +223,21 @@ impl WSHandler {
             }
         }
     }
-    pub(crate) async fn ws_handler(
-        Path(app_id): Path<String>,
-        query: Query<PusherWebsocketQuery>,
+
+    pub async fn ws_handler(
+        // Path(app_id): Path<String>,
+        // query: Query<PusherWebsocketQuery>,
         ws: WebSocketUpgrade,
         ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ) -> impl IntoResponse {
-        Log::info(format!(
-            "WebSocket connection for app {}. Protocol: {}, client: {}, version: {}, flash: {}",
-            app_id,
-            query.protocol.unwrap_or(0),
-            query.client.as_deref().unwrap_or(""),
-            query.version.as_deref().unwrap_or(""),
-            query.flash.unwrap_or(false)
-        ));
+        // Log::info(format!(
+        //     "WebSocket connection for app {}. Protocol: {}, client: {}, version: {}, flash: {}",
+        //     app_id,
+        //     query.protocol.unwrap_or(0),
+        //     query.client.as_deref().unwrap_or(""),
+        //     query.version.as_deref().unwrap_or(""),
+        //     query.flash.unwrap_or(false)
+        // ));
         ws.on_upgrade(move |socket| WSHandler::handle_socket(socket, addr))
     }
 }

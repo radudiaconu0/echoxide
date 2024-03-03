@@ -1,12 +1,12 @@
 use crate::http_handler::{HttpHandler, PrometheusQuery};
 use crate::log::Log;
-use crate::metrics::prometheus_metrics_driver::PrometheusMetricsDriver;
+// use crate::metrics::prometheus_metrics_driver::PrometheusMetricsDriver;
 use crate::options::{
     Adapter, AppManager, ArrayAppManager, CacheAppManager, ClusterAdapter, Metrics,
     MySQLAppManager, NatsAdapter, Options, Prometheus, RedisAdapter,
 };
 use crate::ws_handler::WSHandler;
-use axum::extract::Query;
+use tracing_subscriber;
 
 use axum::routing::{get, post, Route};
 use axum::Router;
@@ -21,13 +21,18 @@ use std::sync::{Arc, Weak};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::Mutex;
+use tower_http::{
+    services::ServeDir,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct Server {
     pub closing: bool,
     options: Option<Options>,
     ws_handler: Mutex<Option<Arc<WSHandler>>>,
-    pub(crate) metrics: Mutex<Option<Arc<PrometheusMetricsDriver>>>,
-    http_handler: Mutex<Option<Arc<HttpHandler>>>,
+    // pub(crate) metrics: Mutex<Option<Arc<PrometheusMetricsDriver>>>,
+    // http_handler: Mutex<Option<Arc<HttpHandler>>>,
 }
 
 impl Server {
@@ -67,7 +72,7 @@ impl Server {
                 },
             },
             debug: true,
-            port: 3000,
+            port: 6001,
             metrics: Metrics {
                 enabled: false,
                 driver: String::from("prometheus"),
@@ -82,19 +87,19 @@ impl Server {
             closing: false,
             options: Some(options),
             ws_handler: Mutex::new(None),
-            metrics: Mutex::new(None),
-            http_handler: Mutex::new(None),
+            // metrics: Mutex::new(None),
+            // http_handler: Mutex::new(None),
         });
         let ws_handler = Arc::new(WSHandler {
             server: Arc::downgrade(&server), // Create a Weak reference from the server
         });
-        let metrics = Arc::new(PrometheusMetricsDriver::new(Arc::downgrade(&server)));
-        let http_handler = Arc::new(HttpHandler {
-            server: Arc::downgrade(&server),
-        });
+        // let metrics = Arc::new(PrometheusMetricsDriver::new(Arc::downgrade(&server)));
+        // let http_handler = Arc::new(HttpHandler {
+        //     server: Arc::downgrade(&server),
+        // });
         server.ws_handler.lock().await.replace(ws_handler);
-        server.metrics.lock().await.replace(metrics);
-        server.http_handler.lock().await.replace(http_handler);
+        // server.metrics.lock().await.replace(metrics);
+        // server.http_handler.lock().await.replace(http_handler);
         server
     }
     pub async fn start(&self) {
@@ -143,44 +148,57 @@ impl Server {
         self
     }
 
-    pub async fn metrics_server(&self) -> Router {
-        let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
-        Router::new()
-            .route("/usage", get(HttpHandler::usage))
-            .route(
-                "/metrics",
-                get(move |prometheus_query: Query<PrometheusQuery>| async move {
-                    http_handler.clone().metrics(prometheus_query).await
-                }),
-            )
-    }
-    async fn start_metrics_server(&self) {
-        let app = self.metrics_server().await;
-        let options = self.options.as_ref().unwrap();
-        let addr = format!("{}:{}", options.metrics.host, options.metrics.port);
-        let listener = TcpListener::bind(addr).await.unwrap();
-        Log::success_title(format!(
-            "🌠 Prometheus /metrics endpoint is available on port {}",
-            options.metrics.port
-        ));
-        tracing::debug!("listening on {}", listener.local_addr().unwrap());
-        axum::serve(listener, app).await.unwrap();
-    }
+    // pub async fn metrics_server(&self) -> Router {
+    //     let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
+    //     Router::new()
+    //         .route("/usage", get(HttpHandler::usage))
+    //         .route(
+    //             "/metrics",
+    //             get(move |prometheus_query: Query<PrometheusQuery>| async move {
+    //                 http_handler.clone().metrics(prometheus_query).await
+    //             }),
+    //         )
+    // }
+    // async fn start_metrics_server(&self) {
+    //     let app = self.metrics_server().await;
+    //     let options = self.options.as_ref().unwrap();
+    //     let addr = format!("{}:{}", options.metrics.host, options.metrics.port);
+    //     let listener = TcpListener::bind(addr).await.unwrap();
+    //     Log::success_title(format!(
+    //         "🌠 Prometheus /metrics endpoint is available on port {}",
+    //         options.metrics.port
+    //     ));
+    //     tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    //     axum::serve(listener, app).await.unwrap();
+    // }
 
     pub async fn start_main_server(&self) {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "example_websockets=debug,tower_http=debug".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
         let router = Router::new()
+            .route("/ws", get(WSHandler::ws_handler))
             .route("/health", get(HttpHandler::health_check))
-            .route("/app/:appId", get(WSHandler::ws_handler))
             .route(
-                "/apps/:appId/channels/:channelName",
+                "/apps/:app_id/channels/:channel_name",
                 get(HttpHandler::channel),
             )
-            .route("/apps/:appId/channels", get(HttpHandler::channels))
+            .route("/apps/:app_id/channels", get(HttpHandler::channels))
             .route("/ready", get(HttpHandler::ready))
-            .route("/events", post(HttpHandler::events));
-        let server = TcpListener::bind(("127.0.0.1", self.options.as_ref().unwrap().port))
+            .route("/events", post(HttpHandler::events))
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+            );
+
+        let server = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 6001)))
             .await
             .unwrap();
+        tracing::debug!("listening on {}", server.local_addr().unwrap());
         Log::success_title("🎉 Server is up and running!".to_string());
         Log::success_title(format!(
             "📡 The Websockets server is available at 127.0.0.1:{}",
