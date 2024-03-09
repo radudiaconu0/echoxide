@@ -29,10 +29,17 @@ pub struct PusherMessage {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct PusherApiMessage {
     pub name: Option<String>,
-    pub data: Option<AnyValue>,
+    pub data: Option<String>,
     pub channel: Option<String>,
     pub channels: Option<Vec<String>>,
     pub socket_id: Option<String>,
+    pub info: Option<PusherApiMessageInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PusherApiMessageInfo {
+    pub user_count: Option<u64>,
+    pub subscription_count: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

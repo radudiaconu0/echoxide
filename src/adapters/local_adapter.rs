@@ -1,4 +1,4 @@
-use crate::adapters::adapter_trait::AdapterInterface;
+use crate::adapters::adapter::Adapter;
 use crate::channels::channel::Channel;
 use crate::channels::presence_channel_manager::PresenceMemberInfo;
 use crate::namespace::Namespace;
@@ -6,9 +6,8 @@ use crate::ws_handler::WebSocket;
 use async_trait::async_trait;
 use aws_sdk_lambda::config::IntoShared;
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use tokio::sync::Mutex;
+use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Mutex};
 
 pub struct LocalAdapter {
     pub namespaces: HashMap<String, Namespace>,
@@ -22,13 +21,13 @@ impl LocalAdapter {
     }
 }
 
-impl AdapterInterface for LocalAdapter {
-    async fn get_namespace(&mut self, app_id: &str) -> Result<&Namespace, ()> {
-        if self.namespaces.get(app_id).is_none() {
+impl Adapter for LocalAdapter {
+    async fn get_namespace(&mut self, app_id: &str) -> Result<&mut Namespace, ()> {
+        if self.namespaces.get_mut(app_id).is_none() {
             self.namespaces
                 .insert(app_id.to_string(), Namespace::new(app_id.to_string()));
         }
-        Ok(self.namespaces.get(app_id).unwrap())
+        Ok(self.namespaces.get_mut(app_id).unwrap())
     }
 
     async fn get_namespaces(&self) -> HashMap<String, &Namespace> {
@@ -43,19 +42,20 @@ impl AdapterInterface for LocalAdapter {
 
     async fn add_socket(&mut self, app_id: &str, ws: WebSocket) -> bool {
         let mut namespace = self.get_namespace(app_id).await;
-        namespace.add_socket(ws)
+        namespace.unwrap().add_socket(ws).unwrap()
     }
 
     async fn remove_socket(&mut self, app_id: &str, ws_id: &str) -> bool {
-        let mut namespace = self.get_namespace(app_id).await;
-        namespace.remove_socket(ws_id.to_string())
+        let mut namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.remove_socket(ws_id.to_string()).is_ok()
     }
 
     async fn add_to_channel(&mut self, app_id: &str, channel: &str, ws: WebSocket) -> usize {
-        let mut namespace = self.get_namespace(app_id).await;
+        let mut namespace = self.get_namespace(app_id).await.unwrap();
         namespace
             .add_to_channel(channel.to_string(), ws.id.unwrap().clone())
-            .await;
+            .await
+            .expect("TODO: panic message");
         self.get_channel_sockets_count(app_id, channel, false).await
     }
 
@@ -64,37 +64,34 @@ impl AdapterInterface for LocalAdapter {
         app_id: &str,
         channel: Channel,
         ws_id: &str,
-    ) -> Option<usize> {
-        let mut namespace = self.get_namespace(app_id).await;
+    ) -> Result<usize, ()> {
+        let namespace = self.get_namespace(app_id).await.unwrap();
         namespace.remove_from_channel(ws_id, channel).await
     }
 
-    async fn send(&mut self, app_id: &str, channel: &str, data: &str, excepting_id: Option<&str>) {
-        if channel.contains("#server-to-") {
-            let user_id = channel.replace("#server-to-", "");
-            let user_sockets = self.get_user_sockets(app_id, &user_id).await;
-            for mut ws in user_sockets {
-                ws.send_json(serde_json::Value::String(data.to_string()))
-                    .await;
+    async fn send(mut self, app_id: &str, channel: &str, data: &str, excepting_id: Option<&str>) {
+        // if channel.contains("#server-to-") {
+        //     let user_id = channel.replace("#server-to-", "");
+        //     let user_sockets = self.get_user_sockets(app_id, &user_id).await;
+        //     for ws in user_sockets.lock().unwrap().deref_mut().into_iter() {
+        //         ws.send_json(serde_json::Value::String(data.to_string()))
+        //             .await;
+        //     }
+        //     return;
+        // }
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        let channel_sockets = namespace.get_channel_sockets(channel).unwrap();
+        for (ws_id, mut ws) in channel_sockets {
+            if excepting_id.is_some() && excepting_id.unwrap() == ws_id {
+                continue;
             }
-            return;
-        }
-        let mut namespace = self.get_namespace(app_id).await;
-        let channel_sockets = namespace.get_channel_sockets(channel);
-        for mut ws in channel_sockets {
-            if excepting_id.is_some() && ws.1.id.as_ref().unwrap() == excepting_id.unwrap() {
-                return;
-            }
-            ws.1.send_json(serde_json::Value::String(data.to_string()))
+            ws.send_json(serde_json::Value::String(data.to_string()))
                 .await;
         }
     }
 
     async fn terminate_user_connections(&mut self, app_id: &str, user_id: &str) {
-        self.get_namespace(app_id)
-            .await
-            .terminate_user_connections(user_id)
-            .await;
+        todo!("Implement terminate_user_connections")
     }
 
     async fn disconnect(&self) {
@@ -102,7 +99,7 @@ impl AdapterInterface for LocalAdapter {
     }
 
     async fn clear_namespace(&mut self, namespace_id: &str) {
-        self.namespaces.lock().await.insert(
+        self.namespaces.insert(
             namespace_id.to_string(),
             Namespace::new(namespace_id.to_string()),
         );
@@ -110,18 +107,22 @@ impl AdapterInterface for LocalAdapter {
     }
 
     async fn clear_namespaces(&mut self) {
-        self.namespaces.lock().await.clear();
+        self.namespaces.clear();
         return;
     }
 
-    async fn get_sockets(&mut self, app_id: &str, only_local: bool) -> HashMap<String, WebSocket> {
-        let mut namespace = self.get_namespace(app_id).await;
-        namespace.get_sockets()
+    async fn get_sockets(
+        &mut self,
+        app_id: &str,
+        only_local: bool,
+    ) -> Arc<Mutex<HashMap<String, WebSocket>>> {
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        Arc::clone(&namespace.get_sockets().unwrap())
     }
 
     async fn get_sockets_count(&mut self, app_id: &str, only_local: bool) -> usize {
-        let mut namespace = self.get_namespace(app_id).await;
-        namespace.get_sockets().len()
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_sockets().unwrap().lock().unwrap().len()
     }
 
     async fn get_channels(
@@ -129,8 +130,8 @@ impl AdapterInterface for LocalAdapter {
         app_id: &str,
         only_local: bool,
     ) -> HashMap<String, HashSet<String>> {
-        let mut namespace = self.get_namespace(app_id).await;
-        namespace.get_channels()
+        let mut namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channels().unwrap()
     }
 
     async fn get_channels_with_sockets_count(
@@ -138,8 +139,8 @@ impl AdapterInterface for LocalAdapter {
         app_id: &str,
         only_local: bool,
     ) -> HashMap<String, usize> {
-        let mut namespace = self.get_namespace(app_id).await;
-        namespace.get_channels_with_sockets_count()
+        let mut namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channels_with_sockets_count().unwrap()
     }
 
     async fn get_channel_sockets(
@@ -148,8 +149,8 @@ impl AdapterInterface for LocalAdapter {
         channel: &str,
         only_local: bool,
     ) -> HashMap<String, &WebSocket> {
-        let namespace = self.get_namespace(app_id).await;
-        namespace.get_channel_sockets(channel)
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channel_sockets(channel).unwrap()
     }
 
     async fn get_channel_sockets_count(
@@ -158,8 +159,8 @@ impl AdapterInterface for LocalAdapter {
         channel: &str,
         only_local: bool,
     ) -> usize {
-        let namespace = self.get_namespace(app_id).await;
-        namespace.get_channel_sockets(channel).len()
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channel_sockets(channel).unwrap().len()
     }
 
     async fn get_channel_members(
@@ -168,8 +169,8 @@ impl AdapterInterface for LocalAdapter {
         channel: &str,
         only_local: bool,
     ) -> HashMap<String, PresenceMemberInfo> {
-        let namespace = self.get_namespace(app_id).await;
-        namespace.get_channel_members(channel)
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channel_members(channel).unwrap()
     }
 
     async fn get_channel_members_count(
@@ -178,8 +179,8 @@ impl AdapterInterface for LocalAdapter {
         channel: &str,
         only_local: bool,
     ) -> usize {
-        let namespace = self.get_namespace(app_id).await;
-        namespace.get_channel_members(channel).len()
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.get_channel_members(channel).unwrap().len()
     }
 
     async fn is_in_channel(
@@ -189,8 +190,8 @@ impl AdapterInterface for LocalAdapter {
         ws_id: &str,
         only_local: bool,
     ) -> bool {
-        let namespace = self.get_namespace(app_id).await;
-        namespace.is_in_channel(channel, ws_id)
+        let namespace = self.get_namespace(app_id).await.unwrap();
+        namespace.is_in_channel(channel, ws_id).unwrap()
     }
 
     async fn add_user(&mut self, ws: WebSocket) {
@@ -202,8 +203,17 @@ impl AdapterInterface for LocalAdapter {
             .await;
     }
 
-    async fn get_user_sockets(&mut self, app_id: &str, user_id: &str) -> HashSet<&WebSocket> {
-        return self.get_namespace(app_id).await.get_user_sockets(user_id);
+    async fn get_user_sockets(
+        &mut self,
+        app_id: &str,
+        user_id: &str,
+    ) -> Arc<Mutex<HashSet<&WebSocket>>> {
+        return self
+            .get_namespace(app_id)
+            .await
+            .unwrap()
+            .get_user_sockets(user_id)
+            .unwrap();
     }
     // fn init(&self) -> Box<dyn AdapterInterface> {
     //     Box::new(self)

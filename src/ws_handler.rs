@@ -3,7 +3,7 @@ use crate::log::Log;
 use crate::message;
 use crate::message::{PusherMessage, UWebSocketMessage};
 use crate::server::Server;
-use axum::extract::{ConnectInfo, Path, Query};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::response::IntoResponse;
 use echoxide::{WebSocketUpgrade, WS};
 use rand::Rng;
@@ -57,7 +57,7 @@ impl WebSocket {
 
     pub async fn send_json(&mut self, data: serde_json::Value) {
         Log::websocket_title("Sending message to client");
-        Log::websocket(&data.to_string());
+        Log::websocket(serde_json::to_string_pretty(&data).unwrap().as_str());
         let message = match serde_json::to_string(&data) {
             Ok(message) => message,
             Err(e) => {
@@ -204,8 +204,7 @@ impl WSHandler {
                 Event::Data { ty, data } => {
                     println!("Data: {:#?}", ty);
                     let data = String::from_utf8(data.to_vec()).unwrap();
-                    let pusher_message: message::PusherMessage =
-                        serde_json::from_str(&data).unwrap();
+                    let pusher_message: PusherMessage = serde_json::from_str(&data).unwrap();
                     ws_handler.on_message(pusher_message, &mut ws).await;
                 }
                 Event::Ping(_) => {
@@ -225,19 +224,19 @@ impl WSHandler {
     }
 
     pub async fn ws_handler(
-        // Path(app_id): Path<String>,
-        // query: Query<PusherWebsocketQuery>,
+        Path(app_id): Path<String>,
+        query: Query<PusherWebsocketQuery>,
         ws: WebSocketUpgrade,
         ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ) -> impl IntoResponse {
-        // Log::info(format!(
-        //     "WebSocket connection for app {}. Protocol: {}, client: {}, version: {}, flash: {}",
-        //     app_id,
-        //     query.protocol.unwrap_or(0),
-        //     query.client.as_deref().unwrap_or(""),
-        //     query.version.as_deref().unwrap_or(""),
-        //     query.flash.unwrap_or(false)
-        // ));
+        Log::info(format!(
+            "WebSocket connection for app {}. Protocol: {}, client: {}, version: {}, flash: {}",
+            app_id,
+            query.protocol.unwrap_or(0),
+            query.client.as_deref().unwrap_or(""),
+            query.version.as_deref().unwrap_or(""),
+            query.flash.unwrap_or(false)
+        ));
         ws.on_upgrade(move |socket| WSHandler::handle_socket(socket, addr))
     }
 }

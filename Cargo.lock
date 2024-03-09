@@ -547,7 +547,9 @@ dependencies = [
  "base64 0.22.0",
  "chrono",
  "colored",
+ "fastwebsockets",
  "fred",
+ "futures-util",
  "hex",
  "hmac",
  "http 1.0.0",
@@ -587,6 +589,20 @@ name = "fastrand"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
+
+[[package]]
+name = "fastwebsockets"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5badf44f2ba24c260a59c17b44151134e6248903363bf838ab5196cebfa75be8"
+dependencies = [
+ "bytes",
+ "rand",
+ "simdutf8",
+ "thiserror",
+ "tokio",
+ "utf-8",
+]
 
 [[package]]
 name = "float-cmp"
@@ -1688,6 +1704,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "simdutf8"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2075,6 +2097,12 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "uuid"

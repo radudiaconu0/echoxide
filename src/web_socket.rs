@@ -6,14 +6,37 @@ use axum::{
     extract::FromRequestParts,
     http::{header, request::Parts, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::Response,
+    Error,
 };
+use futures_util::{Sink, Stream};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-pub type WS = web_socket::WebSocket<TokioIo<Upgraded>>;
+struct WS(pub(crate) web_socket::WebSocket<TokioIo<Upgraded>>);
+
+impl Stream for WS {
+    type Item = Result<Event, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        loop {
+            match futures_util::ready!(self.0.stream.poll_flush()) {
+                Some(Ok(msg)) => {
+                    if let Some(msg) = Event::from_tungstenite(msg) {
+                        return Poll::Ready(Some(Ok(msg)));
+                    }
+                }
+                Some(Err(err)) => return Poll::Ready(Some(Err(Error::new(err)))),
+                None => return Poll::Ready(None),
+            }
+        }
+    }
+}
 
 pub use web_socket;
+use web_socket::{Event, WebSocket};
 
 pub struct WebSocketUpgrade {
     sec_websocket_key: HeaderValue,
@@ -22,9 +45,9 @@ pub struct WebSocketUpgrade {
 
 impl WebSocketUpgrade {
     pub fn on_upgrade<C, Fut>(self, callback: C) -> Response
-    where
-        C: FnOnce(WS) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        where
+            C: FnOnce(WS) -> Fut + Send + 'static,
+            Fut: Future<Output=()> + Send + 'static,
     {
         let on_upgrade = self.on_upgrade;
         tokio::spawn(async move {
@@ -56,8 +79,8 @@ impl WebSocketUpgrade {
 
 #[async_trait]
 impl<S> FromRequestParts<S> for WebSocketUpgrade
-where
-    S: Send + Sync,
+    where
+        S: Send + Sync,
 {
     type Rejection = ();
 

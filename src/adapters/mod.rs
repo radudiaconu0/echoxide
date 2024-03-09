@@ -1,3 +1,2 @@
-pub mod adapter;
-pub mod adapter_trait;
-pub mod local_adapter;
+// pub mod adapter;
+// pub mod local_adapter;

@@ -2,12 +2,13 @@ use crate::channels::channel::Channel;
 use crate::channels::presence_channel_manager::{PresenceMember, PresenceMemberInfo};
 use crate::ws_handler::WebSocket;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 pub struct Namespace {
     pub channels: HashMap<String, HashSet<String>>,
     pub users: HashMap<String, HashSet<String>>,
     pub app_id: String,
-    pub sockets: HashMap<String, WebSocket>,
+    pub sockets: Arc<Mutex<HashMap<String, WebSocket>>>,
 }
 
 impl Namespace {
@@ -16,12 +17,12 @@ impl Namespace {
             channels: HashMap::new(),
             users: HashMap::new(),
             app_id,
-            sockets: HashMap::new(),
+            sockets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn get_sockets(self) -> Result<HashMap<String, WebSocket>, ()> {
-        Ok(self.sockets)
+    pub fn get_sockets(&self) -> Result<Arc<Mutex<HashMap<String, WebSocket>>>, ()> {
+        Ok(Arc::clone(&self.sockets))
     }
 
     pub fn add_socket(&mut self, ws: WebSocket) -> Result<bool, ()> {
@@ -124,19 +125,22 @@ impl Namespace {
         }
         Ok(())
     }
-    pub fn get_channel_sockets(&self, channel: &str) -> Result<HashMap<String, &WebSocket>, ()> {
+    pub fn get_channel_sockets(
+        &self,
+        channel: &str,
+    ) -> Result<Arc<Mutex<HashMap<String, &WebSocket>>>, ()> {
         let channels = self.channels.clone();
         if channels.get(channel).is_none() {
-            Ok(HashMap::new())
+            Ok(Arc::new(Mutex::new(HashMap::new())))
         } else {
             let ws_ids = channels.get(channel).unwrap();
             let mut sockets = HashMap::new();
             for ws_id in ws_ids.iter() {
-                if let Some(ws) = self.sockets.get(ws_id) {
+                if let Some(ws) = self.sockets.lock().unwrap().get(ws_id) {
                     sockets.insert(ws_id.clone(), ws);
                 }
             }
-            Ok(sockets.clone())
+            Ok(Arc::clone(&Arc::new(Mutex::new(sockets))))
         }
     }
     pub(crate) fn get_channel_sockets_count(&self, p0: &str) -> Result<usize, ()> {
@@ -176,19 +180,19 @@ impl Namespace {
         let mut socket_ids = Vec::new();
         if let Some(ws_ids) = self.users.get(user_id) {
             for ws_id in ws_ids.iter() {
-                if self.sockets.contains_key(ws_id) {
+                if self.sockets.lock().unwrap().get(ws_id).is_some() {
                     socket_ids.push(ws_id.clone());
                 }
             }
         }
         Ok(socket_ids)
     }
-    pub fn get_user_sockets(&self, user_id: &str) -> Result<HashSet<&WebSocket>, ()> {
-        let mut sockets = HashSet::new();
+    pub fn get_user_sockets(&self, user_id: &str) -> Result<Arc<Mutex<HashSet<&WebSocket>>>, ()> {
+        let mut sockets = Arc::new(Mutex::new(HashSet::new()));
         if let Some(ws_ids) = self.users.get(user_id) {
             for ws_id in ws_ids.iter() {
                 if let Some(ws) = self.sockets.get(ws_id) {
-                    sockets.insert(ws);
+                    sockets.lock().unwrap().insert(ws);
                 }
             }
         }
@@ -196,7 +200,8 @@ impl Namespace {
     }
     pub async fn terminate_user_connections(self, user_id: &str) {
         let sockets = self.get_sockets().unwrap();
-        for (_ws_id, mut ws) in sockets {
+        let mut sockets = sockets.lock().unwrap();
+        for (_ws_id, ws) in sockets.iter() {
             if let Some(user) = ws.user.clone() {
                 if user.id == user_id {
                     ws.send_json(serde_json::json!({
@@ -207,10 +212,10 @@ impl Namespace {
                         },
                     }))
                     .await;
-                    if (ws
+                    if ws
                         .ws
                         .close((4201u16, "You got disconnected by the app."))
-                        .await)
+                        .await
                         .is_ok()
                     {}
                 }

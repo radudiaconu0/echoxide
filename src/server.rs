@@ -9,18 +9,23 @@ use crate::ws_handler::WSHandler;
 use tracing_subscriber;
 
 use axum::routing::{get, post, Route};
-use axum::Router;
 use axum::{
     http::{header::HeaderMap, StatusCode},
     response::{IntoResponse, Response},
+    Json,
 };
+use axum::{Router, ServiceExt};
 
+use crate::message::PusherApiMessage;
+use crate::metrics::prometheus_metrics_driver::PrometheusMetricsDriver;
+use axum::extract::Query;
+use axum::handler::HandlerWithoutStateExt;
 use std::fmt::format;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use tokio::net::TcpListener;
-use tokio::signal;
 use tokio::sync::Mutex;
+use tokio::{join, signal};
 use tower_http::{
     services::ServeDir,
     trace::{DefaultMakeSpan, TraceLayer},
@@ -31,8 +36,8 @@ pub struct Server {
     pub closing: bool,
     options: Option<Options>,
     ws_handler: Mutex<Option<Arc<WSHandler>>>,
-    // pub(crate) metrics: Mutex<Option<Arc<PrometheusMetricsDriver>>>,
-    // http_handler: Mutex<Option<Arc<HttpHandler>>>,
+    pub(crate) metrics: Mutex<Option<Arc<PrometheusMetricsDriver>>>,
+    http_handler: Mutex<Option<Arc<HttpHandler>>>,
 }
 
 impl Server {
@@ -87,19 +92,19 @@ impl Server {
             closing: false,
             options: Some(options),
             ws_handler: Mutex::new(None),
-            // metrics: Mutex::new(None),
-            // http_handler: Mutex::new(None),
+            metrics: Mutex::new(None),
+            http_handler: Mutex::new(None),
         });
         let ws_handler = Arc::new(WSHandler {
             server: Arc::downgrade(&server), // Create a Weak reference from the server
         });
-        // let metrics = Arc::new(PrometheusMetricsDriver::new(Arc::downgrade(&server)));
-        // let http_handler = Arc::new(HttpHandler {
-        //     server: Arc::downgrade(&server),
-        // });
+        let metrics = Arc::new(PrometheusMetricsDriver::new(Arc::downgrade(&server)));
+        let http_handler = Arc::new(HttpHandler {
+            server: Arc::downgrade(&server),
+        });
         server.ws_handler.lock().await.replace(ws_handler);
-        // server.metrics.lock().await.replace(metrics);
-        // server.http_handler.lock().await.replace(http_handler);
+        server.metrics.lock().await.replace(metrics);
+        server.http_handler.lock().await.replace(http_handler);
         server
     }
     pub async fn start(&self) {
@@ -109,7 +114,7 @@ impl Server {
             Log::info("📡 echoxide initialization....".to_string());
             Log::info("⚡ Initializing the HTTP API & Websockets Server...".to_string());
         }
-        self.start_main_server().await;
+        join!(self.start_main_server(), self.start_metrics_server(),);
     }
 
     async fn stop(&mut self) {
@@ -148,29 +153,29 @@ impl Server {
         self
     }
 
-    // pub async fn metrics_server(&self) -> Router {
-    //     let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
-    //     Router::new()
-    //         .route("/usage", get(HttpHandler::usage))
-    //         .route(
-    //             "/metrics",
-    //             get(move |prometheus_query: Query<PrometheusQuery>| async move {
-    //                 http_handler.clone().metrics(prometheus_query).await
-    //             }),
-    //         )
-    // }
-    // async fn start_metrics_server(&self) {
-    //     let app = self.metrics_server().await;
-    //     let options = self.options.as_ref().unwrap();
-    //     let addr = format!("{}:{}", options.metrics.host, options.metrics.port);
-    //     let listener = TcpListener::bind(addr).await.unwrap();
-    //     Log::success_title(format!(
-    //         "🌠 Prometheus /metrics endpoint is available on port {}",
-    //         options.metrics.port
-    //     ));
-    //     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    //     axum::serve(listener, app).await.unwrap();
-    // }
+    pub async fn metrics_server(&self) -> Router {
+        let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
+        Router::new()
+            .route("/usage", get(HttpHandler::usage))
+            .route(
+                "/metrics",
+                get(move |prometheus_query: Query<PrometheusQuery>| async move {
+                    http_handler.clone().metrics(prometheus_query).await
+                }),
+            )
+    }
+    async fn start_metrics_server(&self) {
+        let app = self.metrics_server().await;
+        let options = self.options.as_ref().unwrap();
+        let addr = format!("{}:{}", options.metrics.host, options.metrics.port);
+        let listener = TcpListener::bind(addr).await.unwrap();
+        Log::success_title(format!(
+            "🌠 Prometheus /metrics endpoint is available on port {}",
+            options.metrics.port
+        ));
+        tracing::debug!("listening on {}", listener.local_addr().unwrap());
+        axum::serve(listener, app).await.unwrap();
+    }
 
     pub async fn start_main_server(&self) {
         tracing_subscriber::registry()
@@ -180,8 +185,9 @@ impl Server {
             )
             .with(tracing_subscriber::fmt::layer())
             .init();
+        let http_handler = self.http_handler.lock().await.clone().unwrap(); // Clone the Arc
         let router = Router::new()
-            .route("/ws", get(WSHandler::ws_handler))
+            .route("/app/:app_id", get(WSHandler::ws_handler))
             .route("/health", get(HttpHandler::health_check))
             .route(
                 "/apps/:app_id/channels/:channel_name",
@@ -189,7 +195,12 @@ impl Server {
             )
             .route("/apps/:app_id/channels", get(HttpHandler::channels))
             .route("/ready", get(HttpHandler::ready))
-            .route("/events", post(HttpHandler::events))
+            .route(
+                "/metrics",
+                get(move |message: Json<PusherApiMessage>| async move {
+                    http_handler.clone().events(message).await
+                }),
+            )
             .layer(
                 TraceLayer::new_for_http()
                     .make_span_with(DefaultMakeSpan::default().include_headers(true)),
@@ -209,6 +220,11 @@ impl Server {
             self.options.as_ref().unwrap().port
         ));
         Log::br();
-        axum::serve(server, router).await.unwrap();
+        axum::serve(
+            server,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     }
 }
